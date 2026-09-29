@@ -1,0 +1,6 @@
+{
+  "name": "EvidenceTwin — Digital Companion for Field Drug Testing",
+  "description": "Evidence-centric digital companion for colorimetric field drug testing with colour calibration, explainability, stability lab, and cryptographic hash-chain verification.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
