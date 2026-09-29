@@ -7,6 +7,7 @@ import {
   ReferenceCardDetectionResult,
   EvidenceGateResult,
 } from '../../types/evidence';
+import { TestKitDetectionResult } from '../../services/engines/cvEngine';
 import {
   ShieldCheck,
   Check,
@@ -30,6 +31,7 @@ interface QualityScreenProps {
   roi?: ReactionROI;
   calibration?: CalibrationData;
   cardDetection?: ReferenceCardDetectionResult;
+  testKitDetection?: TestKitDetectionResult;
   gateResult?: EvidenceGateResult;
   cvDebugImage?: string | null;
   cvRectifiedCard?: string | null;
@@ -48,6 +50,7 @@ export const QualityScreen: React.FC<QualityScreenProps> = ({
   roi,
   calibration,
   cardDetection,
+  testKitDetection,
   gateResult,
   cvDebugImage,
   cvRectifiedCard,
@@ -63,6 +66,10 @@ export const QualityScreen: React.FC<QualityScreenProps> = ({
   const [showManualCardAdjustment, setShowManualCardAdjustment] = useState(false);
   const [viewportMode, setViewportMode] = useState<'original' | 'cv_overlay' | 'rectified'>('original');
 
+  // Track whether user is actively in manual ROI adjustment mode to prevent auto-sync overwrites
+  const isManualRoiActiveRef = React.useRef(false);
+  const isManualCardActiveRef = React.useRef(false);
+
   // Manual ROI state (in normalized percentages)
   const [roiX, setRoiX] = useState(roi?.boundingBox?.x ?? 18.0);
   const [roiY, setRoiY] = useState(roi?.boundingBox?.y ?? 35.0);
@@ -75,27 +82,47 @@ export const QualityScreen: React.FC<QualityScreenProps> = ({
   const [cardW, setCardW] = useState(cardDetection?.cardBoundingBox?.width ?? 0.0);
   const [cardH, setCardH] = useState(cardDetection?.cardBoundingBox?.height ?? 0.0);
 
-  // Sync state if cardDetection or roi updates from CV engine
+  // Stable dependency keys to avoid useEffect firing on every object re-creation
+  const cardBoxKey = cardDetection?.cardBoundingBox
+    ? `${cardDetection.cardBoundingBox.x.toFixed(1)}_${cardDetection.cardBoundingBox.y.toFixed(1)}_${cardDetection.cardBoundingBox.width.toFixed(1)}_${cardDetection.cardBoundingBox.height.toFixed(1)}`
+    : 'none';
+  const roiBoxKey = roi?.boundingBox
+    ? `${roi.boundingBox.x.toFixed(1)}_${roi.boundingBox.y.toFixed(1)}_${roi.boundingBox.width.toFixed(1)}_${roi.boundingBox.height.toFixed(1)}`
+    : 'none';
+
+  // Sync state if cardDetection updates from CV engine (only when NOT in manual card mode)
   useEffect(() => {
-    if (cardDetection?.cardBoundingBox) {
+    if (!isManualCardActiveRef.current && cardDetection?.cardBoundingBox) {
       setCardX(cardDetection.cardBoundingBox.x);
       setCardY(cardDetection.cardBoundingBox.y);
       setCardW(cardDetection.cardBoundingBox.width);
       setCardH(cardDetection.cardBoundingBox.height);
     }
-  }, [cardDetection?.cardBoundingBox]);
+  }, [cardBoxKey]);
 
+  // Sync state if ROI updates from CV engine (only when NOT in manual ROI mode)
   useEffect(() => {
-    if (roi?.boundingBox) {
+    if (!isManualRoiActiveRef.current && roi?.boundingBox) {
       setRoiX(roi.boundingBox.x);
       setRoiY(roi.boundingBox.y);
       setRoiW(roi.boundingBox.width);
       setRoiH(roi.boundingBox.height);
     }
-  }, [roi?.boundingBox]);
+  }, [roiBoxKey]);
+
+  // When manual adjustment panel opens, mark as active; when it closes, allow sync again
+  useEffect(() => {
+    isManualRoiActiveRef.current = showManualAdjustment;
+  }, [showManualAdjustment]);
+
+  useEffect(() => {
+    isManualCardActiveRef.current = showManualCardAdjustment;
+  }, [showManualCardAdjustment]);
 
   const handleApplyRoi = () => {
     if (onUpdateRoiCoords) {
+      // Temporarily disable the manual mode flag so the pipeline result can sync back
+      isManualRoiActiveRef.current = false;
       onUpdateRoiCoords({ x: roiX, y: roiY, width: roiW, height: roiH, method: 'MANUAL' });
     }
   };
@@ -111,6 +138,10 @@ export const QualityScreen: React.FC<QualityScreenProps> = ({
   const patchCount = cardDetection?.patchCount ?? (isCardDetected ? 15 : 0);
   const requiredPatches = cardDetection?.requiredPatchCount ?? 15;
   const cardBox = cardDetection?.cardBoundingBox || (showManualCardAdjustment && cardW > 0 ? { x: cardX, y: cardY, width: cardW, height: cardH } : null);
+
+  const isTestKitDetected = testKitDetection?.detected ?? false;
+  const testKitConfidence = testKitDetection?.confidence ?? null;
+  const testKitBox = testKitDetection?.kitBoundingBox || null;
 
   const lighting = lightingAnalysis || {
     lightingCondition: 'GOOD' as const,
@@ -335,6 +366,30 @@ export const QualityScreen: React.FC<QualityScreenProps> = ({
                       <span>REFERENCE CARD NOT DETECTED</span>
                     </div>
                   )}
+
+                  {/* Test Kit Container Bounding Box (Positioned dynamically from OpenCV) */}
+                  {isTestKitDetected && testKitBox ? (
+                    <div
+                      className="absolute border-2 border-[#10B981] rounded-md bg-[#10B981]/10 backdrop-blur-2xs p-1.5 sm:p-2 flex flex-col justify-between transition-all"
+                      style={{
+                        left: `${testKitBox.x}%`,
+                        top: `${testKitBox.y}%`,
+                        width: `${testKitBox.width}%`,
+                        height: `${testKitBox.height}%`,
+                      }}
+                    >
+                      <div className="flex items-center justify-between text-[9px] sm:text-[10px] text-[#065F46] bg-white/95 px-1.5 py-0.5 rounded shadow-xs font-semibold gap-1 whitespace-nowrap overflow-hidden">
+                        <span>TEST KIT: {(testKitDetection?.profileId || 'CONTAINER').toUpperCase()}</span>
+                        <span className="text-[#059669] font-mono">
+                          {testKitConfidence !== null ? `${testKitConfidence}%` : 'LOCKED'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-[8px] sm:text-[9px] font-mono text-[#065F46] bg-white/90 px-1 py-0.5 rounded gap-1 whitespace-nowrap overflow-hidden">
+                        <span>PERSPECTIVE NORMALIZED</span>
+                        <span className="font-bold text-[#059669]">REACTION ZONE ACTIVE</span>
+                      </div>
+                    </div>
+                  ) : null}
 
                   {/* Reaction ROI Bounding Box */}
                   {roi?.detected ? (
@@ -771,10 +826,26 @@ export const QualityScreen: React.FC<QualityScreenProps> = ({
                 )}
               </div>
               <div className="flex items-center justify-between">
+                <span>Field Test Kit Container</span>
+                {isTestKitDetected ? (
+                  <span className="text-[#16865B] font-semibold flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" /> Locked ({testKitConfidence !== null ? `${testKitConfidence}%` : 'VERIFIED'})
+                  </span>
+                ) : (
+                  <span className="text-[#D64550] font-semibold flex items-center gap-1">
+                    <X className="w-3.5 h-3.5" /> Not Detected
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center justify-between">
                 <span>Reaction Region [ROI]</span>
                 {roi?.detected ? (
                   <span className="text-[#16865B] font-semibold flex items-center gap-1">
                     <Check className="w-3.5 h-3.5" /> Acquired ({roi.selectionMethod || 'MANUAL'})
+                  </span>
+                ) : !isTestKitDetected ? (
+                  <span className="text-[#D64550] font-semibold flex items-center gap-1">
+                    <X className="w-3.5 h-3.5" /> Blocked (Test Kit Missing)
                   </span>
                 ) : (
                   <span className="text-[#D64550] font-semibold flex items-center gap-1">

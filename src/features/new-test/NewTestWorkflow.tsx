@@ -38,11 +38,13 @@ import { analyzeMatrixInterference } from '../../services/engines/matrixInterfer
 import {
   validateAndDecodeImage,
   detectReferenceCard,
+  detectTestKit,
   detectReactionROI,
   calculateRealImageQuality,
   performRealCalibration,
   evaluateEvidenceGate,
   executeBackendCVPipeline,
+  TestKitDetectionResult,
 } from '../../services/engines/cvEngine';
 import { evidenceDb } from '../../services/data/evidenceDatabase';
 import { Check, Beaker, ShieldAlert, ArrowLeft } from 'lucide-react';
@@ -123,6 +125,7 @@ export const NewTestWorkflow: React.FC<NewTestWorkflowProps> = ({
   }));
 
   const [cardDetectionResult, setCardDetectionResult] = useState<ReferenceCardDetectionResult | null>(null);
+  const [testKitResult, setTestKitResult] = useState<TestKitDetectionResult | null>(null);
 
   const [humanInterpretation, setHumanInterpretation] = useState<HumanInterpretation>({
     operatorInterpretation: null,
@@ -139,9 +142,22 @@ export const NewTestWorkflow: React.FC<NewTestWorkflowProps> = ({
     runColorCalibration()
   );
 
-  const [reactionRoi, setReactionRoi] = useState<ReactionROI>(() =>
-    extractReactionROI(initialScenario?.sampleColorHex || '#3D1C52', runColorCalibration())
-  );
+  const [reactionRoi, setReactionRoi] = useState<ReactionROI>(() => {
+    if (initialScenario) {
+      return extractReactionROI(initialScenario.sampleColorHex || '#3D1C52', runColorCalibration());
+    }
+    return {
+      detected: false,
+      confidence: 0,
+      boundingBox: { x: 0, y: 0, width: 0, height: 0 },
+      rawColorHex: '#808080',
+      calibratedColorHex: '#808080',
+      dominantLab: { L: 0, a: 0, b: 0 },
+      spectralProfile: [],
+      selectionMethod: 'NONE',
+      glareDetected: false,
+    };
+  });
 
   const [presumptiveResult, setPresumptiveResult] = useState<PresumptiveClassification>(
     initialScenario?.expectedResult || 'POSITIVE'
@@ -267,6 +283,7 @@ export const NewTestWorkflow: React.FC<NewTestWorkflowProps> = ({
     });
 
     let cardResult: ReferenceCardDetectionResult;
+    let testKit: TestKitDetectionResult;
     let roiResult: { detected: boolean; valid: boolean; reason?: string; roi?: ReactionROI };
     let quality: ImageQualityMetrics;
     let calResult: { success: boolean; calibration: CalibrationData; reason?: string };
@@ -294,6 +311,22 @@ export const NewTestWorkflow: React.FC<NewTestWorkflowProps> = ({
         })),
         cardBoundingBox: backendCV.reference_card.bbox,
         statusMessage: backendCV.reference_card.status_message,
+      };
+
+      testKit = backendCV.test_kit ? {
+        detected: backendCV.test_kit.detected,
+        confidence: backendCV.test_kit.confidence,
+        kitBoundingBox: backendCV.test_kit.bbox,
+        corners: backendCV.test_kit.corners,
+        polygon: backendCV.test_kit.polygon,
+        statusMessage: backendCV.test_kit.status_message,
+        profileId: backendCV.test_kit.profile_id,
+        reactionChamberBbox: backendCV.test_kit.reaction_chamber_bbox,
+        aspectRatio: backendCV.test_kit.aspect_ratio,
+      } : {
+        detected: false,
+        confidence: null,
+        statusMessage: 'Test kit detector unavailable',
       };
 
       roiResult = {
@@ -369,6 +402,7 @@ export const NewTestWorkflow: React.FC<NewTestWorkflowProps> = ({
         details: {
           imageValid: true,
           referenceCardDetected: cardResult.detected,
+          testKitDetected: testKit.detected,
           detectedPatchCount: cardResult.patchCount,
           requiredPatchCount: cardResult.requiredPatchCount,
           referenceConfidence: cardResult.confidence,
@@ -387,9 +421,16 @@ export const NewTestWorkflow: React.FC<NewTestWorkflowProps> = ({
         manualCardCoords || undefined
       );
 
+      testKit = detectTestKit(
+        decoded.canvas,
+        cardResult,
+        targetKit.id
+      );
+
       roiResult = detectReactionROI(
         decoded.canvas,
         cardResult,
+        testKit,
         manualRoi || manualRoiCoords || undefined
       );
 
@@ -401,6 +442,7 @@ export const NewTestWorkflow: React.FC<NewTestWorkflowProps> = ({
         imageValid: decoded.valid,
         imageInvalidReason: decoded.reason,
         cardResult,
+        testKitResult: testKit,
         roiResult,
         quality,
         calibrationResult: calResult,
@@ -408,8 +450,22 @@ export const NewTestWorkflow: React.FC<NewTestWorkflowProps> = ({
     }
 
     setCardDetectionResult(cardResult);
+    setTestKitResult(testKit);
+    // Always sync ROI state: set when detected, clear to undetected when not
     if (roiResult.roi) {
       setReactionRoi(roiResult.roi);
+    } else {
+      setReactionRoi({
+        detected: false,
+        confidence: 0,
+        boundingBox: { x: 0, y: 0, width: 0, height: 0 },
+        rawColorHex: '#808080',
+        calibratedColorHex: '#808080',
+        dominantLab: { L: 0, a: 0, b: 0 },
+        spectralProfile: [],
+        selectionMethod: 'NONE',
+        glareDetected: false,
+      });
     }
     setQualityMetrics(quality);
     setCalibrationData(calResult.calibration);
@@ -804,6 +860,7 @@ export const NewTestWorkflow: React.FC<NewTestWorkflowProps> = ({
           roi={reactionRoi}
           calibration={calibrationData}
           cardDetection={cardDetectionResult || undefined}
+          testKitDetection={testKitResult || undefined}
           gateResult={evidenceGateResult}
           cvDebugImage={cvDebugImage}
           cvRectifiedCard={cvRectifiedCard}

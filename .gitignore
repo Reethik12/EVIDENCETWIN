@@ -1,8 +1,51 @@
+# Research material — keep local, do not push
+Research/
+
+# Python virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Node dependencies
 node_modules/
-build/
-dist/
-coverage/
-.DS_Store
-*.log
-.env*
+
+# Environment / secrets
+.env
+.env.*
 !.env.example
+
+# Build output
+dist/
+build/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local test/generated images
+top_350.jpg
+section_0_200.jpg
+section_200_400.jpg
+section_400_700.jpg
+section_700_1000.jpg
+saturated_crop.jpg
+
+# Research / reference materials - keep out of GitHub
+Research/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/

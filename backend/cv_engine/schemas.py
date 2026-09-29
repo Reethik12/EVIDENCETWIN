@@ -102,6 +102,54 @@ class ReferenceCardResult(_Base):
     stages: Dict[str, str] = Field(default_factory=dict)
     package_swatches_rejected: bool = True
 
+class TestKitProfile(_Base):
+    id: str = "kit-fentanyl-strip"
+    name: str = "Fentanyl Reagent Strip / Pouch"
+    expected_aspect_ratio: float = 1.65
+    geometry: str = "pouch"  # pouch, cassette, tube, vial
+    expected_reaction_region: Dict[str, float] = Field(default_factory=lambda: {
+        "x_min": 0.10, "x_max": 0.90, "y_min": 0.50, "y_max": 0.98
+    })
+    reaction_model: str = "fluid_pool"  # fluid_pool, strip_window, cassette_window, liquid_column
+    allowed_orientation: str = "any"
+    minimum_visible_area: float = 0.015
+    detection_features: List[str] = Field(default_factory=lambda: ["sealed_edge", "label_text", "reaction_well"])
+
+SUPPORTED_TEST_KIT_PROFILES: Dict[str, TestKitProfile] = {
+    "kit-fentanyl-strip": TestKitProfile(
+        id="kit-fentanyl-strip",
+        name="Fentanyl Lateral-Flow / Ampoule Pouch",
+        expected_aspect_ratio=1.65,
+        geometry="pouch",
+        expected_reaction_region={"x_min": 0.10, "x_max": 0.90, "y_min": 0.50, "y_max": 0.98},
+        reaction_model="fluid_pool"
+    ),
+    "kit-marquis-pro": TestKitProfile(
+        id="kit-marquis-pro",
+        name="Marquis Reagent Pouch with Ampoules",
+        expected_aspect_ratio=1.45,
+        geometry="pouch",
+        expected_reaction_region={"x_min": 0.10, "x_max": 0.90, "y_min": 0.50, "y_max": 0.98},
+        reaction_model="fluid_pool"
+    ),
+    "kit-cassette-standard": TestKitProfile(
+        id="kit-cassette-standard",
+        name="Standard Multi-Panel Cassette",
+        expected_aspect_ratio=2.20,
+        geometry="cassette",
+        expected_reaction_region={"x_min": 0.20, "x_max": 0.80, "y_min": 0.30, "y_max": 0.70},
+        reaction_model="cassette_window"
+    ),
+    "kit-generic": TestKitProfile(
+        id="kit-generic",
+        name="Field Test Kit General Profile",
+        expected_aspect_ratio=1.50,
+        geometry="generic",
+        expected_reaction_region={"x_min": 0.10, "x_max": 0.90, "y_min": 0.35, "y_max": 0.98},
+        reaction_model="fluid_or_line"
+    ),
+}
+
 class TestKitResult(_Base):
     detected: bool = False
     confidence: Optional[float] = None
@@ -112,6 +160,7 @@ class TestKitResult(_Base):
     profile_id: Optional[str] = "kit-fentanyl-strip"
     swatches_detected: int = 0
     perspective_rectified: bool = False
+    reaction_chamber_bbox: Optional[BoundingBox] = None
 
 class ReactionROIResult(_Base):
     detected: bool = False

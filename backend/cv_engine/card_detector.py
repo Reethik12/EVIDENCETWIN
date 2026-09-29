@@ -122,12 +122,16 @@ def generate_card_candidates(
     thresh_adapt = cv2.adaptiveThreshold(
         clahe_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 25, 4
     )
-    kernel_close = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-    closed_adapt = cv2.morphologyEx(thresh_adapt, cv2.MORPH_CLOSE, kernel_close)
+    kernel_close5 = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    closed_adapt = cv2.morphologyEx(thresh_adapt, cv2.MORPH_CLOSE, kernel_close5)
 
-    canny1 = cv2.Canny(clahe_gray, 40, 140)
+    canny1 = cv2.Canny(clahe_gray, 30, 130)
     kernel_dilate = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
     dilated_edges = cv2.dilate(canny1, kernel_dilate, iterations=1)
+    kernel_close9 = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
+    closed_canny9 = cv2.morphologyEx(dilated_edges, cv2.MORPH_CLOSE, kernel_close9)
+    kernel_close15 = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
+    closed_canny15 = cv2.morphologyEx(dilated_edges, cv2.MORPH_CLOSE, kernel_close15)
 
     _, thresh_otsu = cv2.threshold(clahe_gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
@@ -138,7 +142,8 @@ def generate_card_candidates(
     binary_maps = [
         ("dark_border", dilated_border),
         ("adaptive_close", closed_adapt),
-        ("canny_edges", dilated_edges),
+        ("canny_close9", closed_canny9),
+        ("canny_close15", closed_canny15),
         ("otsu", thresh_otsu),
     ]
 
@@ -180,16 +185,16 @@ def generate_card_candidates(
                         candidates.append(cand)
                         break
 
-            # Also check MinAreaRect for curved / perspective card corners
+            # Also check MinAreaRect for curved / perspective card corners (relaxed solidity for card interior)
             rect = cv2.minAreaRect(cnt)
             box = cv2.boxPoints(rect)
             box = np.intp(box)
             box_area = cv2.contourArea(box)
             if min_area < box_area < max_area:
                 solidity = area / (box_area + 1e-5)
-                if solidity > 0.70:
+                if solidity > 0.28:
                     is_valid, geom_score, aspect = evaluate_quadrilateral_geometry(box, w, h)
-                    if is_valid and geom_score > 0.35:
+                    if is_valid and geom_score > 0.32:
                         cx, cy = float(rect[0][0]), float(rect[0][1])
                         is_dup = any(
                             abs(cx - scx) < 25 and abs(cy - scy) < 25 and abs(box_area - sarea) / max(box_area, sarea) < 0.35
@@ -198,10 +203,68 @@ def generate_card_candidates(
                         if not is_dup:
                             seen_candidates.append((cx, cy, box_area))
                             area_bonus = min(0.40, (box_area / total_area) * 2.0)
-                            cand = CardCandidate(box, box_area, score=geom_score * 0.92 + area_bonus + 0.40, source_method="minAreaRect")
+                            cand = CardCandidate(box, box_area, score=geom_score * 0.95 + area_bonus + 0.40, source_method=f"{name}_minAreaRect")
                             cand.aspect_ratio = aspect
                             candidates.append(cand)
 
+    # Method 7: Connected-Component Patch Grid Cluster Discovery
+    # Finds small rectangular patches clustering in a 3x5 arrangement
+    patch_cnts = []
+    patch_min_area = total_area * 0.0004
+    patch_max_area = total_area * 0.040
+
+    canny_raw = cv2.Canny(clahe_gray, 35, 120)
+    cnts_all, _ = cv2.findContours(canny_raw, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    for c in cnts_all:
+        ca = cv2.contourArea(c)
+        if patch_min_area < ca < patch_max_area:
+            cr = cv2.minAreaRect(c)
+            cw, ch_box = cr[1]
+            if min(cw, ch_box) > 10:
+                casp = max(cw, ch_box) / (min(cw, ch_box) + 1e-5)
+                if casp < 1.70:
+                    patch_cnts.append(cr[0])
+
+    if len(patch_cnts) >= 5:
+        pts_arr = np.array(patch_cnts, dtype=np.float32)
+        # Cluster bounding rect
+        p_min_x, p_max_x = float(np.min(pts_arr[:, 0])), float(np.max(pts_arr[:, 0]))
+        p_min_y, p_max_y = float(np.min(pts_arr[:, 1])), float(np.max(pts_arr[:, 1]))
+        p_w = p_max_x - p_min_x
+        p_h = p_max_y - p_min_y
+
+        if p_w > 50 and p_h > 40:
+            # Expand to full card bounds (patches occupy ~75% width and ~60% height)
+            exp_w = p_w * 1.25
+            exp_h = p_h * 1.55
+            exp_cx = (p_min_x + p_max_x) / 2.0
+            exp_cy = (p_min_y + p_max_y) / 2.0
+
+            c_x1 = max(0.0, exp_cx - exp_w / 2.0)
+            c_x2 = min(float(w), exp_cx + exp_w / 2.0)
+            c_y1 = max(0.0, exp_cy - exp_h / 2.0)
+            c_y2 = min(float(h), exp_cy + exp_h / 2.0)
+
+            c_area = (c_x2 - c_x1) * (c_y2 - c_y1)
+            if min_area < c_area < max_area:
+                c_quad = np.array([
+                    [c_x1, c_y1],
+                    [c_x2, c_y1],
+                    [c_x2, c_y2],
+                    [c_x1, c_y2]
+                ], dtype=np.float32)
+                is_val, geom_sc, asp = evaluate_quadrilateral_geometry(c_quad, w, h)
+                if is_val and geom_sc > 0.35:
+                    is_dup = any(
+                        abs(exp_cx - scx) < 30 and abs(exp_cy - scy) < 30
+                        for scx, scy, _ in seen_candidates
+                    )
+                    if not is_dup:
+                        seen_candidates.append((exp_cx, exp_cy, c_area))
+                        cand = CardCandidate(c_quad, c_area, score=geom_sc + 0.60, source_method="patch_cluster")
+                        cand.aspect_ratio = asp
+                        candidates.append(cand)
+
     # Sort candidates by descending geometric score across the entire image
     candidates.sort(key=lambda c: c.score, reverse=True)
-    return candidates[:36]
+    return candidates[:48]

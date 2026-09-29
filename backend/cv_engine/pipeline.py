@@ -111,30 +111,47 @@ class EvidenceVisionPipeline:
             target_h = 320 if is_square else 220
             warped, M, M_inv = compute_perspective_warp(proc_bgr, cand.corners, target_width=320, target_height=target_h)
 
-            # Test standard orientation
-            patches_0, matched_0, score_0, valid_0 = detect_and_measure_patches(warped, profile=prof)
+            # Test 4 cardinal orientations: 0°, 90°, 180°, 270° in canonical space
+            orientations = [
+                (0, warped),
+                (90, cv2.resize(cv2.rotate(warped, cv2.ROTATE_90_CLOCKWISE), (320, target_h))),
+                (180, cv2.rotate(warped, cv2.ROTATE_180)),
+                (270, cv2.resize(cv2.rotate(warped, cv2.ROTATE_90_COUNTERCLOCKWISE), (320, target_h)))
+            ]
 
-            # Test 180-degree rotation (in case card is upside-down)
-            warped_180 = cv2.rotate(warped, cv2.ROTATE_180)
-            patches_180, matched_180, score_180, valid_180 = detect_and_measure_patches(warped_180, profile=prof)
+            best_rot_matched = -1
+            warped_chosen = warped
+            patches_chosen = []
+            matched_chosen = 0
+            score_chosen = 0.0
+            winning_rot = 0
 
-            if matched_180 > matched_0:
-                warped_chosen = warped_180
-                patches_chosen = patches_180
-                matched_chosen = matched_180
-                score_chosen = score_180
-            else:
-                warped_chosen = warped
-                patches_chosen = patches_0
-                matched_chosen = matched_0
-                score_chosen = score_0
+            for rot_deg, w_img in orientations:
+                p_list, m_cnt, sc, vld = detect_and_measure_patches(w_img, profile=prof)
+                if m_cnt > best_rot_matched:
+                    best_rot_matched = m_cnt
+                    warped_chosen = w_img
+                    patches_chosen = p_list
+                    matched_chosen = m_cnt
+                    score_chosen = sc
+                    winning_rot = rot_deg
 
             # Scale corners back to original image space
-            corners_orig = []
+            corners_orig_raw = []
             for pt in cand.corners:
                 ox = float(pt[0] * prep.inv_scale)
                 oy = float(pt[1] * prep.inv_scale)
-                corners_orig.append((round(ox, 1), round(oy, 1)))
+                corners_orig_raw.append((round(ox, 1), round(oy, 1)))
+
+            # Adjust corner sequence according to winning rotation
+            if winning_rot == 90:
+                corners_orig = [corners_orig_raw[1], corners_orig_raw[2], corners_orig_raw[3], corners_orig_raw[0]]
+            elif winning_rot == 180:
+                corners_orig = [corners_orig_raw[2], corners_orig_raw[3], corners_orig_raw[0], corners_orig_raw[1]]
+            elif winning_rot == 270:
+                corners_orig = [corners_orig_raw[3], corners_orig_raw[0], corners_orig_raw[1], corners_orig_raw[2]]
+            else:
+                corners_orig = corners_orig_raw
 
             # Validate card structure (multi-signal: grid, count, spacing, aspect, border)
             is_confirmed, conf, status_msg, vis_frac = validate_card_structure(
@@ -311,16 +328,16 @@ class EvidenceVisionPipeline:
             pipeline_status = "NO_FIELD_TEST_OBJECTS_DETECTED"
             gate_reasons.append("No field-test objects detected. Neither EvidenceTwin Reference Card nor Test Kit found in image.")
             gate_actions.append("Ensure both the EvidenceTwin 15-patch reference card and field test kit are placed clearly in view.")
-        elif card_is_detected and not kit_result.detected:
-            pipeline_status = "REFERENCE_CARD_DETECTED_TEST_KIT_NOT_DETECTED"
-            gate_reasons.append("EvidenceTwin Reference Card detected, but field test kit / reagent package not detected.")
-            gate_actions.append("Place the field-test reagent pouch or cassette into the frame alongside the reference card.")
         elif not card_is_detected and kit_result.detected:
             pipeline_status = "TEST_KIT_DETECTED_REFERENCE_CARD_NOT_DETECTED"
             gate_reasons.append("Field test kit detected, but 15-patch EvidenceTwin reference card not detected. Spatial color calibration cannot be mathematically performed.")
             gate_actions.append("Place the 15-patch EvidenceTwin reference card anywhere in the photograph alongside the test kit.")
+        elif not card_is_detected:
+            pipeline_status = "REFERENCE_CARD_NOT_FOUND"
+            gate_reasons.append("EvidenceTwin Reference Card not detected. Colorimetric calibration impossible.")
+            gate_actions.append("Place the 15-patch EvidenceTwin reference card in view.")
         else:
-            # Both card and kit detected
+            # Card IS detected — check ROI and quality
             if not reaction_result.detected:
                 pipeline_status = "REACTION_ROI_NOT_FOUND"
                 gate_reasons.append("Reaction well / sample fluid zone not detected in evidence image.")
