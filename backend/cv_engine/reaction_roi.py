@@ -120,22 +120,34 @@ def detect_or_validate_reaction_roi(
     if card_corners is not None and len(card_corners) >= 4:
         cv2.fillPoly(search_mask, [np.int32(card_corners)], 0)
 
-    # 2. Liquid reaction chromophore segmentation INSIDE detected test kit
+    # 2. Exclude Blue Nitrile Glove completely: glove pixels must NEVER be selected as reaction
     sat = img_hsv[:, :, 1]
     val = img_hsv[:, :, 2]
     hue_ch = img_hsv[:, :, 0]
 
-    # Chemical reaction fluid produces vivid chromophore:
-    # Pink/Magenta/Violet: hue [130-180] or [0-22] in OpenCV (260°-360° or 0°-44°)
-    pink_magenta_mask = ((hue_ch >= 130) | (hue_ch <= 22)) & (sat > 28) & (val > 35) & (val < 248)
-    # General saturated fluid pool
-    general_chromophore_mask = (sat > 36) & (val > 30) & (val < 248)
+    blue_glove = ((hue_ch >= 78) & (hue_ch <= 135) & (sat > 35) & (val > 30)) | \
+                 ((img_rgb[:, :, 2] > 90) & (img_rgb[:, :, 2] > img_rgb[:, :, 0] + 20) & (img_rgb[:, :, 2] > img_rgb[:, :, 1] - 20))
+    blue_glove_mask = blue_glove.astype(np.uint8) * 255
+    kernel_glove = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 15))
+    blue_glove_dilated = cv2.dilate(blue_glove_mask, kernel_glove)
+    search_mask[blue_glove_dilated > 0] = 0
 
-    combined_chromophore = (pink_magenta_mask | general_chromophore_mask).astype(np.uint8) * 255
+    # 3. Chemical reaction fluid chromophore segmentation INSIDE detected test kit
+    # Chemical reaction fluid produces vivid chromophore:
+    # Pink/Magenta/Violet: hue [135-180] or [0-25] in OpenCV with vivid saturation > 40
+    pink_magenta_mask = ((hue_ch >= 135) | (hue_ch <= 25)) & (sat > 40) & (val > 35) & (val < 248)
+    # Amber / Orange / Yellow: hue [25-50]
+    amber_orange_mask = (hue_ch > 25) & (hue_ch <= 50) & (sat > 40) & (val > 35) & (val < 248)
+    # Green: hue [50-78]
+    green_mask = (hue_ch > 50) & (hue_ch < 78) & (sat > 40) & (val > 35) & (val < 248)
+    # General saturated fluid pool (strictly excluding blue glove)
+    general_chromophore_mask = (sat > 42) & (val > 35) & (val < 248) & (~blue_glove)
+
+    combined_chromophore = (pink_magenta_mask | amber_orange_mask | green_mask | general_chromophore_mask).astype(np.uint8) * 255
     target_mask = cv2.bitwise_and(combined_chromophore, search_mask)
 
     # Morphological cleaning
-    kernel_m = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    kernel_m = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
     clean_mask = cv2.morphologyEx(target_mask, cv2.MORPH_OPEN, kernel_m)
     clean_mask = cv2.morphologyEx(clean_mask, cv2.MORPH_CLOSE, kernel_m)
 
@@ -146,6 +158,8 @@ def detect_or_validate_reaction_roi(
     min_roi_area = (w * h) * 0.001
     max_roi_area = (w * h) * 0.25
 
+    kit_poly = np.int32(test_kit_corners)
+
     for cnt in contours:
         area = cv2.contourArea(cnt)
         if min_roi_area < area < max_roi_area:
@@ -155,19 +169,33 @@ def detect_or_validate_reaction_roi(
             if aspect < 0.25 or aspect > 4.0:
                 continue
 
+            # Hard constraint 1: Blue nitrile glove exclusion (cannot contain glove pixels)
+            glove_overlap = np.count_nonzero(blue_glove_mask[by:by+bh, bx:bx+bw]) / float(bw * bh + 1e-5)
+            if glove_overlap > 0.05:
+                continue
+
+            # Hard constraint 2: Reaction ROI center MUST lie physically inside detected test kit polygon
+            cx, cy = bx + bw / 2.0, by + bh / 2.0
+            if cv2.pointPolygonTest(kit_poly, (cx, cy), False) < 0:
+                continue
+
             # Check text edge density to exclude printed text swatches
             roi_gray = gray[by:by+bh, bx:bx+bw]
             roi_edges = cv2.Canny(roi_gray, 45, 130)
             edge_density = float(np.count_nonzero(roi_edges)) / float(bw * bh + 1e-5)
-            if edge_density > 0.22:
+            if edge_density > 0.20:
                 continue
+
+            # Distinguish printed packaging swatches from fluid pool
+            is_swatch = (area < 8000 and 0.70 <= aspect <= 1.35 and edge_density > 0.04)
+            swatch_penalty = 0.04 if is_swatch else 1.0
 
             hull = cv2.convexHull(cnt)
             hull_area = cv2.contourArea(hull)
             solidity = area / (hull_area + 1e-5)
 
             # Central liquid reaction droplet score
-            score = area * solidity * (1.0 - edge_density)
+            score = area * solidity * (1.0 - edge_density) * swatch_penalty
             if score > best_score:
                 best_score = score
                 best_cnt = cnt
@@ -175,7 +203,7 @@ def detect_or_validate_reaction_roi(
     if best_cnt is not None:
         bx, by, bw, bh = cv2.boundingRect(best_cnt)
         return extract_reaction_metrics(
-            img_rgb, gray, bx, by, bw, bh, w, h, calibration_matrix, method="AUTO", notes="Reaction fluid droplet segmented dynamically."
+            img_rgb, gray, bx, by, bw, bh, w, h, calibration_matrix, method="AUTO", notes="Reaction fluid droplet segmented dynamically inside test kit."
         )
 
     # Search for reaction chamber within detected test kit geometry

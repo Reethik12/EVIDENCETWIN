@@ -10,6 +10,7 @@ class CardCandidate:
         self.area = area
         self.score = score
         self.source_method = source_method
+        self.aspect_ratio: float = 1.0
         self.rectified_card: Optional[np.ndarray] = None
         self.transform_M: Optional[np.ndarray] = None
         self.inv_M: Optional[np.ndarray] = None
@@ -70,13 +71,14 @@ def evaluate_quadrilateral_geometry(quad: np.ndarray, img_w: int, img_h: int) ->
 
     parallel_score = (edge_ratio_w + edge_ratio_h) / 2.0
 
-    # 4. Aspect ratio: EvidenceTwin reference card is ~1.46 (landscape) or ~0.68 (portrait)
+    # 4. Aspect ratio: EvidenceTwin reference card is ~1.00 (square format) or ~1.46 (landscape format)
     aspect = max(avg_w, avg_h) / (min(avg_w, avg_h) + 1e-5)
-    if aspect < 1.05 or aspect > 2.30:
+    if aspect < 0.88 or aspect > 2.45:
         # Strictly reject non-card aspect ratios (e.g. narrow banners, elongated strips)
         return False, 0.0, aspect
 
-    aspect_score = max(0.2, 1.0 - abs(aspect - 1.46) * 0.7)
+    aspect_diff = min(abs(aspect - 1.00), abs(aspect - 1.46))
+    aspect_score = max(0.35, 1.0 - aspect_diff * 0.8)
 
     geom_score = 0.40 * angle_score + 0.35 * parallel_score + 0.25 * aspect_score
     return True, geom_score, aspect
@@ -93,11 +95,11 @@ def generate_card_candidates(
     """
     h, w = gray.shape[:2]
     total_area = w * h
-    min_area = total_area * 0.008   # At least 0.8% of frame
+    min_area = total_area * 0.015   # Reference card is at least 1.5% of frame (reject individual patches)
     max_area = total_area * 0.92    # At most 92% of frame
 
     candidates: List[CardCandidate] = []
-    seen_centers: List[Tuple[float, float]] = []
+    seen_candidates: List[Tuple[float, float, float]] = []  # (cx, cy, area)
 
     # Priority 0: Manual card selection (if explicitly supplied by operator)
     if manual_box is not None:
@@ -157,18 +159,24 @@ def generate_card_candidates(
                         pts = approx.reshape(4, 2)
                         cx, cy = float(np.mean(pts[:, 0])), float(np.mean(pts[:, 1]))
 
-                        # Check duplicate candidate centers
-                        if any(abs(cx - scx) < 14 and abs(cy - scy) < 14 for scx, scy in seen_centers):
+                        # Check duplicate candidate (only duplicate if BOTH centroid AND area match closely)
+                        is_dup = any(
+                            abs(cx - scx) < 25 and abs(cy - scy) < 25 and abs(area - sarea) / max(area, sarea) < 0.35
+                            for scx, scy, sarea in seen_candidates
+                        )
+                        if is_dup:
                             continue
-                        seen_centers.append((cx, cy))
+                        seen_candidates.append((cx, cy, area))
 
                         # Evaluate card interior body brightness (EvidenceTwin card body is white/light)
                         mask = np.zeros((h, w), dtype=np.uint8)
                         cv2.drawContours(mask, [approx], -1, 255, -1)
                         mean_luma = cv2.mean(gray, mask=mask)[0]
                         luma_bonus = 0.35 if mean_luma > 135 else (0.15 if mean_luma > 110 else -0.15)
+                        area_bonus = min(0.40, (area / total_area) * 2.0)
 
-                        cand = CardCandidate(approx, area, score=geom_score + luma_bonus + 0.50, source_method=name)
+                        cand = CardCandidate(approx, area, score=geom_score + luma_bonus + area_bonus + 0.50, source_method=name)
+                        cand.aspect_ratio = aspect
                         candidates.append(cand)
                         break
 
@@ -183,9 +191,15 @@ def generate_card_candidates(
                     is_valid, geom_score, aspect = evaluate_quadrilateral_geometry(box, w, h)
                     if is_valid and geom_score > 0.35:
                         cx, cy = float(rect[0][0]), float(rect[0][1])
-                        if not any(abs(cx - scx) < 16 and abs(cy - scy) < 16 for scx, scy in seen_centers):
-                            seen_centers.append((cx, cy))
-                            cand = CardCandidate(box, box_area, score=geom_score * 0.92 + 0.40, source_method="minAreaRect")
+                        is_dup = any(
+                            abs(cx - scx) < 25 and abs(cy - scy) < 25 and abs(box_area - sarea) / max(box_area, sarea) < 0.35
+                            for scx, scy, sarea in seen_candidates
+                        )
+                        if not is_dup:
+                            seen_candidates.append((cx, cy, box_area))
+                            area_bonus = min(0.40, (box_area / total_area) * 2.0)
+                            cand = CardCandidate(box, box_area, score=geom_score * 0.92 + area_bonus + 0.40, source_method="minAreaRect")
+                            cand.aspect_ratio = aspect
                             candidates.append(cand)
 
     # Sort candidates by descending geometric score across the entire image

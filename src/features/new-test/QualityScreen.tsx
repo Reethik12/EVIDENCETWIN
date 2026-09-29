@@ -69,11 +69,11 @@ export const QualityScreen: React.FC<QualityScreenProps> = ({
   const [roiW, setRoiW] = useState(roi?.boundingBox?.width ?? 22.0);
   const [roiH, setRoiH] = useState(roi?.boundingBox?.height ?? 26.0);
 
-  // Manual Card state (EvidenceTwin Reference Card strictly on the RIGHT side of the image)
-  const [cardX, setCardX] = useState(cardDetection?.cardBoundingBox?.x ?? 52.0);
-  const [cardY, setCardY] = useState(cardDetection?.cardBoundingBox?.y ?? 12.0);
-  const [cardW, setCardW] = useState(cardDetection?.cardBoundingBox?.width ?? 44.0);
-  const [cardH, setCardH] = useState(cardDetection?.cardBoundingBox?.height ?? 42.0);
+  // Manual Card state (only used if operator manually adjusts Reference Card)
+  const [cardX, setCardX] = useState(cardDetection?.cardBoundingBox?.x ?? 0.0);
+  const [cardY, setCardY] = useState(cardDetection?.cardBoundingBox?.y ?? 0.0);
+  const [cardW, setCardW] = useState(cardDetection?.cardBoundingBox?.width ?? 0.0);
+  const [cardH, setCardH] = useState(cardDetection?.cardBoundingBox?.height ?? 0.0);
 
   // Sync state if cardDetection or roi updates from CV engine
   useEffect(() => {
@@ -101,7 +101,7 @@ export const QualityScreen: React.FC<QualityScreenProps> = ({
   };
 
   const handleApplyManualCard = () => {
-    if (onUpdateManualCard) {
+    if (onUpdateManualCard && cardW > 0) {
       onUpdateManualCard({ x: cardX, y: cardY, width: cardW, height: cardH });
     }
   };
@@ -110,7 +110,7 @@ export const QualityScreen: React.FC<QualityScreenProps> = ({
   const cardConfidence = cardDetection?.confidence ?? null;
   const patchCount = cardDetection?.patchCount ?? (isCardDetected ? 15 : 0);
   const requiredPatches = cardDetection?.requiredPatchCount ?? 15;
-  const cardBox = cardDetection?.cardBoundingBox || { x: cardX, y: cardY, width: cardW, height: cardH };
+  const cardBox = cardDetection?.cardBoundingBox || (showManualCardAdjustment && cardW > 0 ? { x: cardX, y: cardY, width: cardW, height: cardH } : null);
 
   const lighting = lightingAnalysis || {
     lightingCondition: 'GOOD' as const,
@@ -473,7 +473,7 @@ export const QualityScreen: React.FC<QualityScreenProps> = ({
             </div>
 
             <span className="text-[11px] font-mono text-[#8A96A3]">
-              ROI: [{roiX.toFixed(1)}%, {roiY.toFixed(1)}%] • Card: [{cardBox.x.toFixed(1)}%, {cardBox.y.toFixed(1)}%]
+              ROI: {roi?.detected ? `[${roiX.toFixed(1)}%, ${roiY.toFixed(1)}%]` : 'NOT DETECTED'} • Card: {isCardDetected && cardBox ? `[${cardBox.x.toFixed(1)}%, ${cardBox.y.toFixed(1)}%]` : 'UNAVAILABLE'}
             </span>
           </div>
 

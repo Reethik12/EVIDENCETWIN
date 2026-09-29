@@ -105,8 +105,11 @@ class EvidenceVisionPipeline:
 
         # Step 4: Evaluate card candidates anywhere in the image
         for cand in candidates:
-            # Warp candidate to standard 1.46 aspect ratio
-            warped, M, M_inv = compute_perspective_warp(proc_bgr, cand.corners, target_width=320, target_height=220)
+            # Warp candidate according to aspect ratio (square: 320x320, landscape: 320x220)
+            asp = getattr(cand, "aspect_ratio", 1.46)
+            is_square = 0.82 <= asp <= 1.22
+            target_h = 320 if is_square else 220
+            warped, M, M_inv = compute_perspective_warp(proc_bgr, cand.corners, target_width=320, target_height=target_h)
 
             # Test standard orientation
             patches_0, matched_0, score_0, valid_0 = detect_and_measure_patches(warped, profile=prof)
@@ -361,37 +364,48 @@ class EvidenceVisionPipeline:
             preview = proc_bgr.copy()
             pw, ph = prep.proc_w, prep.proc_h
 
-            # Draw Object A: Reference Card polygon (GREEN)
+            # Draw RED: All card candidates evaluated across the frame
+            for idx, cand in enumerate(candidates[:15]):
+                cand_pts = np.int32(cand.corners)
+                is_selected = (best_candidate is not None and np.array_equal(cand.corners, best_candidate.corners))
+                if not is_selected:
+                    cv2.polylines(preview, [cand_pts], isClosed=True, color=(0, 0, 220), thickness=1)
+                    cx = int(np.mean(cand_pts[:, 0]))
+                    cy = int(np.mean(cand_pts[:, 1]))
+                    cv2.putText(preview, f"C#{idx} ({cand.score:.1f})", (max(5, cx - 25), max(15, cy)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 0, 240), 1, cv2.LINE_AA)
+
+            # Draw BLUE: Field-Test Reagent Package polygon (BGR: (230, 110, 0) / (255, 120, 0))
+            if kit_result.detected and kit_corners_orig:
+                kpts_proc = []
+                for ox, oy in kit_corners_orig:
+                    kpts_proc.append([int(ox * prep.scale), int(oy * prep.scale)])
+                kpts_proc = np.array(kpts_proc, dtype=np.int32)
+                cv2.polylines(preview, [kpts_proc], isClosed=True, color=(235, 115, 20), thickness=2)
+                cv2.putText(preview, f"TEST KIT ({kit_result.confidence}%)",
+                            (kpts_proc[0][0], max(25, kpts_proc[0][1] - 8)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.50, (235, 115, 20), 2, cv2.LINE_AA)
+
+            # Draw GREEN: Selected EvidenceTwin Reference Card polygon
             if card_is_detected and best_corners_orig:
                 pts_proc = []
                 for ox, oy in best_corners_orig:
                     pts_proc.append([int(ox * prep.scale), int(oy * prep.scale)])
                 pts_proc = np.array(pts_proc, dtype=np.int32)
                 cv2.polylines(preview, [pts_proc], isClosed=True, color=(0, 220, 80), thickness=3)
-                cv2.putText(preview, f"OBJECT A: REFERENCE CARD ({best_matched_count}/{required_count})",
+                cv2.putText(preview, f"EVIDENCETWIN CARD: LOCKED ({best_matched_count}/{required_count})",
                             (pts_proc[0][0], max(25, pts_proc[0][1] - 10)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.50, (0, 230, 90), 2, cv2.LINE_AA)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.52, (0, 230, 90), 2, cv2.LINE_AA)
 
-            # Draw Object B: Field-Test Reagent Package polygon (CYAN)
-            if kit_result.detected and kit_corners_orig:
-                kpts_proc = []
-                for ox, oy in kit_corners_orig:
-                    kpts_proc.append([int(ox * prep.scale), int(oy * prep.scale)])
-                kpts_proc = np.array(kpts_proc, dtype=np.int32)
-                cv2.polylines(preview, [kpts_proc], isClosed=True, color=(255, 215, 0), thickness=2)
-                cv2.putText(preview, f"OBJECT B: FIELD TEST KIT ({kit_result.confidence}%)",
-                            (kpts_proc[0][0], max(25, kpts_proc[0][1] - 8)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, (255, 215, 0), 2, cv2.LINE_AA)
-
-            # Draw Object C: Reaction Region (ORANGE)
+            # Draw CYAN: Reaction ROI (BGR: (255, 255, 0))
             if reaction_result.detected and reaction_result.bbox:
                 rx = int(round(reaction_result.bbox.x / 100.0 * pw))
                 ry = int(round(reaction_result.bbox.y / 100.0 * ph))
                 rw = int(round(reaction_result.bbox.width / 100.0 * pw))
                 rh = int(round(reaction_result.bbox.height / 100.0 * ph))
-                cv2.rectangle(preview, (rx, ry), (rx + rw, ry + rh), (0, 140, 255), 2)
-                cv2.putText(preview, f"OBJECT C: REACTION ROI ({reaction_result.color_description})", (rx, max(20, ry - 8)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 140, 255), 1, cv2.LINE_AA)
+                cv2.rectangle(preview, (rx, ry), (rx + rw, ry + rh), (255, 255, 0), 2)
+                cv2.putText(preview, f"REACTION ROI ({reaction_result.color_description})", (rx, max(20, ry - 8)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.48, (255, 255, 0), 2, cv2.LINE_AA)
 
             debug_b64 = encode_image_to_base64(preview, format_ext=".jpg", quality=85)
 

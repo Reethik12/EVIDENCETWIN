@@ -371,6 +371,29 @@ def main():
     passed_demo = run_test(pipeline, "DEMO-1", "Full Demonstration Image (Glove + Kit with 6 Swatches + 15-Patch Card)", demo_canvas, True, True, True)
     all_passed = all_passed and passed_demo
 
+    # ----------------------------------------------------
+    # REAL DEMONSTRATION PHOTOGRAPH TEST:
+    # Actual physical camera capture from Research folder
+    # ----------------------------------------------------
+    real_photo_paths = [
+        os.path.join(os.path.dirname(__file__), "..", "..", "Research", "real_demonstration_card.png"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "Research", "Color drug test 1.png"),
+    ]
+    real_photo_found = None
+    for p in real_photo_paths:
+        if os.path.exists(p):
+            real_photo_found = p
+            break
+
+    if real_photo_found:
+        print("\n==================================================")
+        print("RUNNING REAL DEMONSTRATION PHOTOGRAPH VERIFICATION")
+        real_img = cv2.imread(real_photo_found)
+        passed_real = run_test(pipeline, "REAL-DEMO-1", f"Real Demonstration Photo ({os.path.basename(real_photo_found)})", real_img, True, True, True)
+        all_passed = all_passed and passed_real
+    else:
+        print("\n  Warning: Real demonstration photo not found in Research folder.")
+
     print("\n==================================================")
     print(f"FREE-POSITION TEST MATRIX VERDICT: {'ALL TESTS PASSED' if all_passed else 'SOME TESTS FAILED'}")
     print("==================================================")

@@ -19,8 +19,29 @@ DEFAULT_EVIDENCETWIN_PROFILE = ReferenceCardProfile(
     minimum_valid_patch_count=12
 )
 
-# Canonical 15 reference color patch specifications for EvidenceTwin Card (3 rows x 5 columns)
-CANONICAL_15PATCH_SPECS = [
+# Physical EvidenceTwin Reference Card v1 (3 rows x 5 columns)
+PHYSICAL_15PATCH_SPECS = [
+    {"id": "P1", "name": "Row 1 / Col 1 - Red Standard", "expected_hex": "#DC0B24", "expected_rgb": (220, 11, 36), "tolerance": 5.0, "row": 0, "col": 0},
+    {"id": "P2", "name": "Row 1 / Col 2 - Green Standard", "expected_hex": "#049955", "expected_rgb": (4, 153, 85), "tolerance": 5.0, "row": 0, "col": 1},
+    {"id": "P3", "name": "Row 1 / Col 3 - Blue Reference", "expected_hex": "#0133AD", "expected_rgb": (1, 51, 173), "tolerance": 5.0, "row": 0, "col": 2},
+    {"id": "P4", "name": "Row 1 / Col 4 - Yellow Primary", "expected_hex": "#F4CC04", "expected_rgb": (244, 204, 4), "tolerance": 5.0, "row": 0, "col": 3},
+    {"id": "P5", "name": "Row 1 / Col 5 - Magenta Primary", "expected_hex": "#D50CAA", "expected_rgb": (213, 12, 170), "tolerance": 5.0, "row": 0, "col": 4},
+
+    {"id": "P6", "name": "Row 2 / Col 1 - Cyan Primary", "expected_hex": "#03A5E4", "expected_rgb": (3, 165, 228), "tolerance": 5.0, "row": 1, "col": 0},
+    {"id": "P7", "name": "Row 2 / Col 2 - Orange Standard", "expected_hex": "#F05C04", "expected_rgb": (240, 92, 4), "tolerance": 5.0, "row": 1, "col": 1},
+    {"id": "P8", "name": "Row 2 / Col 3 - Purple / Violet", "expected_hex": "#5F2597", "expected_rgb": (95, 37, 151), "tolerance": 5.0, "row": 1, "col": 2},
+    {"id": "P9", "name": "Row 2 / Col 4 - Neutral Grey 50%", "expected_hex": "#888890", "expected_rgb": (136, 136, 144), "tolerance": 5.0, "row": 1, "col": 3},
+    {"id": "P10", "name": "Row 2 / Col 5 - Deep Black 3%", "expected_hex": "#0E0D0E", "expected_rgb": (14, 13, 14), "tolerance": 5.0, "row": 1, "col": 4},
+
+    {"id": "P11", "name": "Row 3 / Col 1 - D65 White Standard", "expected_hex": "#DFDFE3", "expected_rgb": (223, 223, 227), "tolerance": 5.0, "row": 2, "col": 0},
+    {"id": "P12", "name": "Row 3 / Col 2 - Light Grey 50%", "expected_hex": "#AAAAAF", "expected_rgb": (170, 170, 175), "tolerance": 5.0, "row": 2, "col": 1},
+    {"id": "P13", "name": "Row 3 / Col 3 - Dark Grey 8%", "expected_hex": "#3E3E42", "expected_rgb": (62, 62, 66), "tolerance": 5.0, "row": 2, "col": 2},
+    {"id": "P14", "name": "Row 3 / Col 4 - Brown Standard", "expected_hex": "#65381E", "expected_rgb": (101, 56, 30), "tolerance": 5.0, "row": 2, "col": 3},
+    {"id": "P15", "name": "Row 3 / Col 5 - Tan / Sand", "expected_hex": "#D8B598", "expected_rgb": (216, 181, 152), "tolerance": 5.0, "row": 2, "col": 4},
+]
+
+# Prototype 15-patch specifications (synthetic test images)
+PROTOTYPE_15PATCH_SPECS = [
     {"id": "P1", "name": "Row 1 / Col 1 - Red Standard", "expected_hex": "#B23A22", "expected_rgb": (178, 58, 34), "tolerance": 5.0, "row": 0, "col": 0},
     {"id": "P2", "name": "Row 1 / Col 2 - Yellow Primary", "expected_hex": "#F0C808", "expected_rgb": (240, 200, 8), "tolerance": 5.0, "row": 0, "col": 1},
     {"id": "P3", "name": "Row 1 / Col 3 - Green Standard", "expected_hex": "#2A9D8F", "expected_rgb": (42, 157, 143), "tolerance": 5.0, "row": 0, "col": 2},
@@ -39,6 +60,8 @@ CANONICAL_15PATCH_SPECS = [
     {"id": "P14", "name": "Row 3 / Col 4 - Dark Grey 8%", "expected_hex": "#3D4550", "expected_rgb": (61, 69, 80), "tolerance": 4.5, "row": 2, "col": 3},
     {"id": "P15", "name": "Row 3 / Col 5 - Deep Black 3%", "expected_hex": "#1E242C", "expected_rgb": (30, 36, 44), "tolerance": 4.5, "row": 2, "col": 4},
 ]
+
+CANONICAL_15PATCH_SPECS = PHYSICAL_15PATCH_SPECS
 
 def hex_to_rgb(hex_str: str) -> Tuple[int, int, int]:
     """Converts #RRGGBB to (R, G, B)."""
@@ -107,10 +130,17 @@ def detect_and_measure_patches(
     card_bg_luma = float(np.mean(bg_roi)) if bg_roi.size > 0 else 220.0
 
     # 2. Extract patch grid region (middle 58% of card)
-    grid_y_start = int(card_h * 0.22)
-    grid_y_end = int(card_h * 0.80)
-    grid_x_start = int(card_w * 0.07)
-    grid_x_end = int(card_w * 0.93)
+    is_square = (card_w / float(max(1, card_h))) < 1.18
+    if is_square:
+        grid_y_start = int(card_h * 0.24)
+        grid_y_end = int(card_h * 0.77)
+        grid_x_start = int(card_w * 0.04)
+        grid_x_end = int(card_w * 0.96)
+    else:
+        grid_y_start = int(card_h * 0.22)
+        grid_y_end = int(card_h * 0.80)
+        grid_x_start = int(card_w * 0.07)
+        grid_x_end = int(card_w * 0.93)
 
     grid_h = max(20, grid_y_end - grid_y_start)
     grid_w = max(20, grid_x_end - grid_x_start)
@@ -119,110 +149,114 @@ def detect_and_measure_patches(
     cell_h = grid_h / float(rows)
     cell_w = grid_w / float(cols)
 
-    measured_patches: List[PatchMeasurement] = []
-    matched_count = 0
+    def _eval_specs(candidate_specs):
+        meas: List[PatchMeasurement] = []
+        matched = 0
+        for r in range(rows):
+            for c in range(cols):
+                idx = r * cols + c
+                spec = candidate_specs[idx] if idx < len(candidate_specs) else {
+                    "id": f"P{idx+1}",
+                    "name": f"Patch R{r+1}C{c+1}",
+                    "expected_hex": "#808080",
+                    "expected_rgb": (128, 128, 128),
+                    "tolerance": 5.0
+                }
 
-    specs = patch_specs or CANONICAL_15PATCH_SPECS
+                expected_cx = grid_x_start + (c + 0.5) * cell_w
+                expected_cy = grid_y_start + (r + 0.5) * cell_h
 
-    for r in range(rows):
-        for c in range(cols):
-            idx = r * cols + c
-            spec = specs[idx] if idx < len(specs) else {
-                "id": f"P{idx+1}",
-                "name": f"Patch R{r+1}C{c+1}",
-                "expected_hex": "#808080",
-                "expected_rgb": (128, 128, 128),
-                "tolerance": 5.0
-            }
+                half_w = max(3, int(cell_w * 0.28))
+                half_h = max(3, int(cell_h * 0.28))
 
-            expected_cx = grid_x_start + (c + 0.5) * cell_w
-            expected_cy = grid_y_start + (r + 0.5) * cell_h
+                x1 = max(0, int(expected_cx - half_w))
+                x2 = min(card_w, int(expected_cx + half_w))
+                y1 = max(0, int(expected_cy - half_h))
+                y2 = min(card_h, int(expected_cy + half_h))
 
-            # Half-dimensions for patch sampling (sampling central 65% of cell to avoid border outlines)
-            half_w = max(3, int(cell_w * 0.28))
-            half_h = max(3, int(cell_h * 0.28))
+                patch_crop_rgb = rectified_rgb[y1:y2, x1:x2]
 
-            x1 = max(0, int(expected_cx - half_w))
-            x2 = min(card_w, int(expected_cx + half_w))
-            y1 = max(0, int(expected_cy - half_h))
-            y2 = min(card_h, int(expected_cy + half_h))
+                if patch_crop_rgb.size > 0:
+                    patch_gray = gray[y1:y2, x1:x2]
+                    valid_mask = (patch_gray < 250) & (patch_gray > 5)
+                    if np.count_nonzero(valid_mask) >= 12:
+                        valid_pixels = patch_crop_rgb[valid_mask]
+                    else:
+                        valid_pixels = patch_crop_rgb.reshape(-1, 3)
 
-            patch_crop_rgb = rectified_rgb[y1:y2, x1:x2]
+                    mean_r = int(round(float(np.mean(valid_pixels[:, 0]))))
+                    mean_g = int(round(float(np.mean(valid_pixels[:, 1]))))
+                    mean_b = int(round(float(np.mean(valid_pixels[:, 2]))))
 
-            if patch_crop_rgb.size > 0:
-                # Specular Glare & Highlight Filter on patch:
-                # Remove pixels that are clipped (e.g. saturation = 0, luma > 245)
-                patch_gray = gray[y1:y2, x1:x2]
-                valid_mask = (patch_gray < 250) & (patch_gray > 5)
-                if np.count_nonzero(valid_mask) >= 12:
-                    valid_pixels = patch_crop_rgb[valid_mask]
+                    median_r = int(round(float(np.median(valid_pixels[:, 0]))))
+                    median_g = int(round(float(np.median(valid_pixels[:, 1]))))
+                    median_b = int(round(float(np.median(valid_pixels[:, 2]))))
                 else:
-                    valid_pixels = patch_crop_rgb.reshape(-1, 3)
+                    mean_r, mean_g, mean_b = spec["expected_rgb"]
+                    median_r, median_g, median_b = spec["expected_rgb"]
 
-                mean_r = int(round(float(np.mean(valid_pixels[:, 0]))))
-                mean_g = int(round(float(np.mean(valid_pixels[:, 1]))))
-                mean_b = int(round(float(np.mean(valid_pixels[:, 2]))))
+                detected_hex = rgb_to_hex(median_r, median_g, median_b)
+                meas_lab = rgb_to_lab(median_r, median_g, median_b)
+                exp_lab = rgb_to_lab(*spec["expected_rgb"])
 
-                median_r = int(round(float(np.median(valid_pixels[:, 0]))))
-                median_g = int(round(float(np.median(valid_pixels[:, 1]))))
-                median_b = int(round(float(np.median(valid_pixels[:, 2]))))
-            else:
-                mean_r, mean_g, mean_b = spec["expected_rgb"]
-                median_r, median_g, median_b = spec["expected_rgb"]
+                de00 = calculate_ciede2000(exp_lab, meas_lab)
+                meas_hsv_mat = cv2.cvtColor(np.uint8([[[median_r, median_g, median_b]]]), cv2.COLOR_RGB2HSV)[0][0]
+                meas_hsv = (int(meas_hsv_mat[0]), int(meas_hsv_mat[1]), int(meas_hsv_mat[2]))
 
-            detected_hex = rgb_to_hex(median_r, median_g, median_b)
-            meas_lab = rgb_to_lab(median_r, median_g, median_b)
-            exp_lab = rgb_to_lab(*spec["expected_rgb"])
+                luma = 0.299 * median_r + 0.587 * median_g + 0.114 * median_b
+                sat = meas_hsv[1]
+                luma_diff = abs(card_bg_luma - luma)
 
-            # CIEDE2000 Delta E calculation
-            de00 = calculate_ciede2000(exp_lab, meas_lab)
+                is_white_tile = (r == 2 and c == 0)
+                if is_white_tile:
+                    is_valid_patch = (luma > 170 and sat < 40)
+                else:
+                    is_valid_patch = (sat > 16 or luma_diff > 14 or luma < 175)
 
-            meas_hsv_mat = cv2.cvtColor(np.uint8([[[median_r, median_g, median_b]]]), cv2.COLOR_RGB2HSV)[0][0]
-            meas_hsv = (int(meas_hsv_mat[0]), int(meas_hsv_mat[1]), int(meas_hsv_mat[2]))
+                is_matched = is_valid_patch and (de00 < 25.0 or (is_white_tile and luma > 175 and sat < 35))
+                if is_matched:
+                    matched += 1
 
-            luma = 0.299 * median_r + 0.587 * median_g + 0.114 * median_b
-            sat = meas_hsv[1]
-            luma_diff = abs(card_bg_luma - luma)
-
-            # Patch validity rule
-            is_white_tile = (r == 2 and c == 0)
-            if is_white_tile:
-                is_valid_patch = (luma > 170 and sat < 40)
-            else:
-                is_valid_patch = (sat > 16 or luma_diff > 14 or luma < 175)
-
-            # High-confidence patch verification: valid contrast and reasonable chromatic envelope
-            is_matched = is_valid_patch and (de00 < 24.0 or (is_white_tile and luma > 175 and sat < 35))
-            if is_matched:
-                matched_count += 1
-
-            actual_bbox = BoundingBox(
-                x=float(x1),
-                y=float(y1),
-                width=float(x2 - x1),
-                height=float(y2 - y1)
-            )
-
-            measured_patches.append(
-                PatchMeasurement(
-                    patch_id=spec["id"],
-                    name=spec["name"],
-                    expected_hex=spec["expected_hex"],
-                    detected_hex=detected_hex,
-                    centroid=(float(expected_cx), float(expected_cy)),
-                    bbox=actual_bbox,
-                    area=float((x2 - x1) * (y2 - y1)),
-                    mean_rgb=(mean_r, mean_g, mean_b),
-                    median_rgb=(median_r, median_g, median_b),
-                    hsv=meas_hsv,
-                    lab=meas_lab,
-                    delta_e=round(float(de00), 1),
-                    matched=is_matched,
-                    row_index=r,
-                    col_index=c,
+                actual_bbox = BoundingBox(
+                    x=float(x1),
+                    y=float(y1),
+                    width=float(x2 - x1),
+                    height=float(y2 - y1)
                 )
-            )
 
+                meas.append(
+                    PatchMeasurement(
+                        patch_id=spec["id"],
+                        name=spec["name"],
+                        expected_hex=spec["expected_hex"],
+                        detected_hex=detected_hex,
+                        centroid=(float(expected_cx), float(expected_cy)),
+                        bbox=actual_bbox,
+                        area=float((x2 - x1) * (y2 - y1)),
+                        mean_rgb=(mean_r, mean_g, mean_b),
+                        median_rgb=(median_r, median_g, median_b),
+                        hsv=meas_hsv,
+                        lab=meas_lab,
+                        delta_e=round(float(de00), 1),
+                        matched=is_matched,
+                        row_index=r,
+                        col_index=c,
+                    )
+                )
+        return meas, matched
+
+    if patch_specs is not None:
+        measured_patches, matched_count = _eval_specs(patch_specs)
+    else:
+        meas_phys, count_phys = _eval_specs(PHYSICAL_15PATCH_SPECS)
+        if count_phys >= 12:
+            measured_patches, matched_count = meas_phys, count_phys
+        else:
+            meas_proto, count_proto = _eval_specs(PROTOTYPE_15PATCH_SPECS)
+            if count_proto > count_phys:
+                measured_patches, matched_count = meas_proto, count_proto
+            else:
+                measured_patches, matched_count = meas_phys, count_phys
     # Multi-spectral diversity check across 15 patches
     rgbs = np.array([p.median_rgb for p in measured_patches])
     channel_stds = np.std(rgbs, axis=0)

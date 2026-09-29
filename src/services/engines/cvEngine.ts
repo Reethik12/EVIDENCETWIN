@@ -275,7 +275,27 @@ export async function executeBackendCVPipeline(params: {
 /**
  * Canonical 15-patch EvidenceTwin Forensic Reference Card Profile (3 rows x 5 columns)
  */
-export const CANONICAL_15_PATCHES = [
+export const PHYSICAL_15_PATCHES = [
+  { id: 'p1', name: 'Row 1 / Col 1 - Red Standard', expectedHex: '#DC0B24', position: { x: 16, y: 35 }, tolerance: 5.0 },
+  { id: 'p2', name: 'Row 1 / Col 2 - Green Standard', expectedHex: '#049955', position: { x: 33, y: 35 }, tolerance: 5.0 },
+  { id: 'p3', name: 'Row 1 / Col 3 - Blue Reference', expectedHex: '#0133AD', position: { x: 50, y: 35 }, tolerance: 5.0 },
+  { id: 'p4', name: 'Row 1 / Col 4 - Yellow Primary', expectedHex: '#F4CC04', position: { x: 67, y: 35 }, tolerance: 5.0 },
+  { id: 'p5', name: 'Row 1 / Col 5 - Magenta Primary', expectedHex: '#D50CAA', position: { x: 84, y: 35 }, tolerance: 5.0 },
+
+  { id: 'p6', name: 'Row 2 / Col 1 - Cyan Primary', expectedHex: '#03A5E4', position: { x: 16, y: 52 }, tolerance: 5.0 },
+  { id: 'p7', name: 'Row 2 / Col 2 - Orange Standard', expectedHex: '#F05C04', position: { x: 33, y: 52 }, tolerance: 5.0 },
+  { id: 'p8', name: 'Row 2 / Col 3 - Purple / Violet', expectedHex: '#5F2597', position: { x: 50, y: 52 }, tolerance: 5.0 },
+  { id: 'p9', name: 'Row 2 / Col 4 - Neutral Grey 50%', expectedHex: '#888890', position: { x: 67, y: 52 }, tolerance: 5.0 },
+  { id: 'p10', name: 'Row 2 / Col 5 - Deep Black 3%', expectedHex: '#0E0D0E', position: { x: 84, y: 52 }, tolerance: 5.0 },
+
+  { id: 'p11', name: 'Row 3 / Col 1 - D65 White Standard', expectedHex: '#DFDFE3', position: { x: 16, y: 69 }, tolerance: 4.0 },
+  { id: 'p12', name: 'Row 3 / Col 2 - Light Grey 50%', expectedHex: '#AAAAAF', position: { x: 33, y: 69 }, tolerance: 4.0 },
+  { id: 'p13', name: 'Row 3 / Col 3 - Dark Grey 8%', expectedHex: '#3E3E42', position: { x: 50, y: 69 }, tolerance: 4.0 },
+  { id: 'p14', name: 'Row 3 / Col 4 - Brown Standard', expectedHex: '#65381E', position: { x: 67, y: 69 }, tolerance: 4.5 },
+  { id: 'p15', name: 'Row 3 / Col 5 - Tan / Sand', expectedHex: '#D8B598', position: { x: 84, y: 69 }, tolerance: 4.5 },
+];
+
+export const PROTOTYPE_15_PATCHES = [
   { id: 'p1', name: 'Row 1 / Col 1 - Red Standard', expectedHex: '#B23A22', position: { x: 16, y: 35 }, tolerance: 5.0 },
   { id: 'p2', name: 'Row 1 / Col 2 - Yellow Primary', expectedHex: '#F0C808', position: { x: 33, y: 35 }, tolerance: 5.0 },
   { id: 'p3', name: 'Row 1 / Col 3 - Green Standard', expectedHex: '#2A9D8F', position: { x: 50, y: 35 }, tolerance: 5.0 },
@@ -294,6 +314,8 @@ export const CANONICAL_15_PATCHES = [
   { id: 'p14', name: 'Row 3 / Col 4 - Dark Grey 8%', expectedHex: '#3D4550', position: { x: 67, y: 69 }, tolerance: 4.5 },
   { id: 'p15', name: 'Row 3 / Col 5 - Deep Black 3%', expectedHex: '#1E242C', position: { x: 84, y: 69 }, tolerance: 4.5 },
 ];
+
+export const CANONICAL_15_PATCHES = PHYSICAL_15_PATCHES;
 
 /**
  * Renders a high-resolution 320x220 perspective-rectified reference card canvas artifact.
@@ -445,7 +467,7 @@ export function detectReferenceCard(
     });
   }
 
-  // Multi-scale candidates across 9 frame sectors (nominal aspect ratio 1.46)
+  // Multi-scale candidates across 9 frame sectors (nominal aspect ratio 1.46 & 1.00 square)
   const smW = Math.round(w * 0.38);
   const smH = Math.round(smW / 1.46);
   const lgW = Math.round(w * 0.50);
@@ -453,18 +475,26 @@ export function detectReferenceCard(
   const xsW = Math.round(w * 0.28);
   const xsH = Math.round(xsW / 1.46);
 
-  const xPositions = [Math.round(w * 0.05), Math.round(w * 0.32), Math.round(w * 0.56)];
-  const yPositions = [Math.round(h * 0.06), Math.round(h * 0.36), Math.round(h * 0.60)];
+  // Square format candidates (e.g. 514x508 physical card)
+  const sqW = Math.round(w * 0.42);
+  const sqH = Math.round(sqW * 1.0);
+  const sqLgW = Math.round(w * 0.52);
+  const sqLgH = Math.round(sqLgW * 1.0);
+
+  const xPositions = [Math.round(w * 0.05), Math.round(w * 0.30), Math.round(w * 0.52)];
+  const yPositions = [Math.round(h * 0.06), Math.round(h * 0.22), Math.round(h * 0.45)];
 
   for (const py of yPositions) {
     for (const px of xPositions) {
       candidateBoxes.push({ x: px, y: py, width: smW, height: smH, isManual: false });
+      candidateBoxes.push({ x: px, y: py, width: sqW, height: sqH, isManual: false });
     }
   }
 
   candidateBoxes.push(
     { x: Math.round(w * 0.05), y: Math.round(h * 0.08), width: lgW, height: lgH, isManual: false },
     { x: Math.round(w * 0.45), y: Math.round(h * 0.08), width: lgW, height: lgH, isManual: false },
+    { x: Math.round(w * 0.45), y: Math.round(h * 0.18), width: sqLgW, height: sqLgH, isManual: false },
     { x: Math.round(w * 0.25), y: Math.round(h * 0.25), width: lgW, height: lgH, isManual: false },
     { x: Math.round(w * 0.05), y: Math.round(h * 0.50), width: lgW, height: lgH, isManual: false },
     { x: Math.round(w * 0.45), y: Math.round(h * 0.50), width: lgW, height: lgH, isManual: false },
@@ -508,9 +538,9 @@ export function detectReferenceCard(
     }
     const meanBgLuma = bgSamples > 0 ? bgLumaSum / bgSamples : 180;
 
-    // Aspect ratio of the candidate box
+    // Aspect ratio of the candidate box (EvidenceTwin card is ~1.00 square or ~1.46 landscape)
     const aspect = cw / (ch + 1e-5);
-    const isPlausibleCardAspect = (aspect >= 1.05 && aspect <= 2.30);
+    const isPlausibleCardAspect = (aspect >= 0.88 && aspect <= 2.30);
     if (!isPlausibleCardAspect && !rawBox.isManual) {
       continue;
     }
@@ -520,6 +550,7 @@ export function detectReferenceCard(
     }
 
     // STEP 4: Sample the 15-Patch Grid (3 rows x 5 columns)
+    const isSquare = aspect < 1.18;
     const detectedPatches: Array<{
       id: string;
       name: string;
@@ -542,8 +573,8 @@ export function detectReferenceCard(
         ? (patch.position.y > 1 ? patch.position.y / 100 : patch.position.y)
         : (Math.floor(idx / 5) + 0.5) / 3;
 
-      const targetCenterX = Math.round(cw * Math.max(0.06, Math.min(0.94, normX)));
-      const targetCenterY = Math.round(ch * Math.max(0.18, Math.min(0.85, normY)));
+      const targetCenterX = Math.round(cw * (isSquare ? (0.10 + (idx % 5) * 0.20) : Math.max(0.06, Math.min(0.94, normX))));
+      const targetCenterY = Math.round(ch * (isSquare ? (0.28 + Math.floor(idx / 5) * 0.22) : Math.max(0.18, Math.min(0.85, normY))));
       const sampleRadius = Math.max(2, Math.round(Math.min(cw, ch) * 0.035));
 
       // Local centroid search: find best matching local pixel cluster within ±6% neighborhood
@@ -864,10 +895,22 @@ export function detectReactionROI(
         continue;
       }
 
-      // Chemical reaction solution produces a distinct chromophore (chroma >= 22)
-      // Rejects neutral grey/white/black background and packaging
-      if (chroma >= 22) {
-        // Exclude skin/glove tones if needed, but keep distinct reaction chromophores (pink, purple, blue, green, amber)
+      // Exclude Blue Nitrile Glove pixels completely:
+      const isBlueGlove = (b > 85 && b > r + 20 && b > g - 15);
+      if (isBlueGlove) {
+        continue;
+      }
+
+      // Chemical reaction solution produces a distinct chromophore (chroma >= 35):
+      // Pink/Magenta/Violet: r > 105, g < 100, b > 65, (r - g > 25)
+      // Amber / Orange: r > 130, g > 50, b < 75
+      // Green: g > 85, r < 85, b < 85
+      const isPinkMagenta = (r > 105 && g < 100 && b > 65 && (r - g > 25));
+      const isAmberOrange = (r > 130 && g > 50 && b < 75 && (r - b > 40));
+      const isGreen = (g > 85 && r < 85 && b < 85);
+      const isGeneralFluid = (chroma >= 35 && luma > 30 && luma < 240);
+
+      if (isPinkMagenta || isAmberOrange || isGreen || isGeneralFluid) {
         fluidR.push(r);
         fluidG.push(g);
         fluidB.push(b);

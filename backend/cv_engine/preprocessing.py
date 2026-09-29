@@ -23,6 +23,12 @@ def load_image_from_input(image_input: Any) -> np.ndarray:
 
     clean_str = image_input.strip()
 
+    import os
+    if os.path.isfile(clean_str):
+        file_img = cv2.imread(clean_str)
+        if file_img is not None:
+            return file_img
+
     # Strip Data URI header if present
     if clean_str.startswith("data:"):
         match = re.search(r"base64,(.*)$", clean_str, re.DOTALL)
